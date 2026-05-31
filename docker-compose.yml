@@ -1,0 +1,122 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# School Management System — Full Stack
+#
+# Services:
+#   postgres   — PostgreSQL 15, auto-seeded from seed_db/
+#   backend    — Node.js / Express API  (port 5007)
+#   frontend   — React + Vite, served by Caddy  (port 3000 → 5173)
+#   go-service — Go PDF microservice  (port 6001)
+#
+# Start everything:
+#   docker-compose up --build
+#
+# Access:
+#   Frontend  → http://localhost:5173
+#   Backend   → http://localhost:5007
+#   Go PDF    → http://localhost:6001
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       school_mgmt
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      # Persist data between restarts
+      - postgres_data:/var/lib/postgresql/data
+      # Auto-seed on first run: Postgres executes all *.sql files in
+      # /docker-entrypoint-initdb.d/ when the data directory is empty.
+      - ./seed_db/tables.sql:/docker-entrypoint-initdb.d/01-tables.sql:ro
+      - ./seed_db/seed-db.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d school_mgmt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Backend ─────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy   # wait until DB is accepting connections
+    ports:
+      - "5007:5007"
+    environment:
+      PORT:                               5007
+      # Uses the Docker service name "postgres" as the hostname
+      DATABASE_URL:                       postgresql://postgres:postgres@postgres:5432/school_mgmt
+      UI_URL:                             http://localhost:5173
+      API_URL:                            http://localhost:5007
+      COOKIE_DOMAIN:                      localhost
+
+      # ⚠️  Change these secrets before any real deployment
+      JWT_ACCESS_TOKEN_SECRET:            change_me_access_secret
+      JWT_REFRESH_TOKEN_SECRET:           change_me_refresh_secret
+      CSRF_TOKEN_SECRET:                  change_me_csrf_secret
+      EMAIL_VERIFICATION_TOKEN_SECRET:    change_me_email_secret
+      PASSWORD_SETUP_TOKEN_SECRET:        change_me_pwd_secret
+
+      # Token expiry (milliseconds)
+      JWT_ACCESS_TOKEN_TIME_IN_MS:        900000       # 15 min
+      JWT_REFRESH_TOKEN_TIME_IN_MS:       604800000    # 7 days
+      CSRF_TOKEN_TIME_IN_MS:              3600000      # 1 hr
+      EMAIL_VERIFICATION_TOKEN_TIME_IN_MS: 86400000   # 24 hr
+      PASSWORD_SETUP_TOKEN_TIME_IN_MS:    86400000     # 24 hr
+
+      # Email (optional — set your Resend key if you want emails to work)
+      RESEND_API_KEY:                     ""
+      MAIL_FROM_USER:                     noreply@school.local
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5007/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Frontend ────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked in at build time — must match where the browser can reach the API
+        VITE_API_URL: http://localhost:5007
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      # Map container port 3000 → host port 5173 to match the dev URL
+      - "5173:3000"
+    environment:
+      PORT: 3000
+
+  # ── Go PDF Microservice ─────────────────────────────────────────────────────
+  go-service:
+    build:
+      context: ./go-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "6001:6001"
+    environment:
+      PORT:         6001
+      # Uses Docker service name "backend" as hostname
+      NODE_API_URL: http://backend:5007
+
+volumes:
+  postgres_data:
