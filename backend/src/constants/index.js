@@ -1,7 +1,7 @@
 const { ERROR_MESSAGES } = require("./error-messages");
 const API_HOST = 'jsonkeeper.com';
 const API_SUB_URL = 'b';
-const SAMPLE_API_KEY = 'SP04E';
+const SAMPLE_API_KEY = 'RO3JO';
 const API_HEADERS = {
   "x-secret-header": "secret",
 };
