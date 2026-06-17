@@ -92,12 +92,12 @@ const findStudentToSetStatus = async ({ userId, reviewerId, status }) => {
             status_last_reviewed_dt = $2,
             status_last_reviewer_id = $3
         WHERE id = $4
+        AND role_id = 3
     `;
     const queryParams = [status, now, reviewerId, userId];
     const { rowCount } = await processDBRequest({ query, queryParams });
     return rowCount
 }
-
 const findStudentToUpdate = async (paylaod) => {
     const { basicDetails: { name, email }, id } = paylaod;
     const currentDate = new Date();
@@ -111,11 +111,27 @@ const findStudentToUpdate = async (paylaod) => {
     return rows;
 }
 
+const deleteStudentById = async (id) => {
+    const query = `
+        WITH deleted_profile AS (
+            DELETE FROM user_profiles
+            WHERE user_id = $1
+        )
+        DELETE FROM users
+        WHERE id = $1
+        AND role_id = 3
+    `;
+    const queryParams = [id];
+    const { rowCount } = await processDBRequest({ query, queryParams });
+    return rowCount;
+}
+
 module.exports = {
     getRoleId,
     findAllStudents,
     addOrUpdateStudent,
     findStudentDetail,
     findStudentToSetStatus,
-    findStudentToUpdate
+    findStudentToUpdate,
+    deleteStudentById
 };
